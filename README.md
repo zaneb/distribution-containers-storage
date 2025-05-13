@@ -10,6 +10,21 @@ containers having its own unique on-disk storage format.
 
 Currently there is no support for tags, images must be referenced by digest.
 
+Use
+---
+
+Import this library into the distribution registry. Currently the library is
+implemented against [`openshift/docker-distribution` at commit
+`ac5742e896d4`](https://github.com/openshift/docker-distribution/tree/ac5742e896d480763c85f9b65e3c331aa0613552).
+For local development, add a replace directive pointing at your local path,
+like:
+
+```
+replace github.com/zaneb/distribution-containers-storage => ../distribution-containers-storage
+```
+
+Compile the registry with `-tags "exclude_graphdriver_btrfs exclude_graphdriver_aufs exclude_graphdriver_devicemapper exclude_graphdriverr_zfs"`.
+
 Configuration
 -------------
 
