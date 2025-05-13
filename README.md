@@ -2,13 +2,15 @@ Containers-Storage Back End for Container Registry
 ==================================================
 
 `distribution-containers-storage` is a storage plugin library for
-<https://github.com/distribution/distribution> that uses
-<https://github.com/containers/storage> (i.e. the `containers-storage` option
-detailed in `man 5 containers-transports`) as a (read-only) data store. It is
-an attempt to mitigate the problem of ever single tool that works with
-containers having its own unique on-disk storage format.
+[`distribution/distribution`](https://github.com/distribution/distribution)
+that uses [`containers-storage`](https://github.com/containers/storage) (i.e.
+the `containers-storage` option detailed in `man 5 containers-transports`) as a
+(read-only) data store. It is a (failed) attempt to slightly mitigate the
+problem of every single tool that works with containers having its own unique
+on-disk storage format.
 
-Currently there is no support for tags, images must be referenced by digest.
+Currently there is no implementation of tags; images must be referenced by
+digest.
 
 Use
 ---
@@ -36,7 +38,7 @@ storage:
 ```
 
 There are as yet no configuration options for setting the container store.
-Currently he registry must run as root in order to avoid permissions errors
+Currently the registry must run as root in order to avoid permissions errors
 with the container store, so in practice this always uses the system's
 configured root container store (the one you see with `sudo podman image
 list`).
