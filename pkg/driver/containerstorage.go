@@ -2,6 +2,7 @@ package driver
 
 import (
 	"bytes"
+	"compress/gzip"
 	"errors"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/containers/storage"
+	"github.com/containers/storage/pkg/archive"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -157,13 +159,27 @@ func (cs *containerStorage) getBlob(sha string) (blobFunc, int64, error) {
 	if layers, err := cs.store.LayersByCompressedDigest(shaDigest); err == nil {
 		for _, layer := range layers {
 			getDiff := func() (io.ReadCloser, error) {
+				compression := archive.Uncompressed
 				dr, err := cs.store.Diff("", layer.ID, &storage.DiffOptions{
-					Compression: &layer.CompressionType,
+					Compression: &compression,
 				})
 				if err != nil {
 					return nil, fmt.Errorf("could not get diff for blob %s (layer %s): %w", sha, layer.ID, err)
 				}
-				return dr, nil
+				r, w := io.Pipe()
+				// containers/storage uses a custom gzip library. We want to
+				// use the stdlib one to make it more likely to match the
+				// original blob (though it doesn't seem to help).
+				zw, err := gzip.NewWriterLevel(w, gzip.DefaultCompression)
+				if err != nil {
+					return nil, err
+				}
+				go func() {
+					defer w.Close()
+					io.Copy(zw, dr)
+					zw.Close()
+				}()
+				return r, nil
 			}
 			// This isn't particularly efficient, but the actual compressed
 			// image has a different size from layer.CompressedSize, presumably
