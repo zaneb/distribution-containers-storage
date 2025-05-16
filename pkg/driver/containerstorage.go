@@ -3,6 +3,7 @@ package driver
 import (
 	"bytes"
 	"compress/gzip"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -153,51 +154,74 @@ func (cs *containerStorage) listBlobs() ([]string, error) {
 	return shas, nil
 }
 
+func compressBlob(getBlobReader blobFunc) (blobFunc, int64, error) {
+	getDiff := func() (io.ReadCloser, error) {
+		dr, err := getBlobReader()
+
+		r, w := io.Pipe()
+		// containers/storage uses a custom gzip library. We want to
+		// use the stdlib one to make it more likely to match the
+		// original blob.
+		zw, err := gzip.NewWriterLevel(w, gzip.DefaultCompression)
+		if err != nil {
+			return nil, err
+		}
+		go func() {
+			defer w.Close()
+			io.Copy(zw, dr)
+			zw.Close()
+		}()
+		return r, nil
+	}
+	r, err := getDiff()
+	if err != nil {
+		return nil, 0, err
+	}
+	size, err := io.Copy(io.Discard, r)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return getDiff, size, nil
+}
+
 func (cs *containerStorage) getBlob(sha string) (blobFunc, int64, error) {
 	errs := []error{}
 	shaDigest := digest.NewDigestFromEncoded(digest.Canonical, sha)
 	if layers, err := cs.store.LayersByCompressedDigest(shaDigest); err == nil {
 		for _, layer := range layers {
-			getDiff := func() (io.ReadCloser, error) {
-				compression := archive.Uncompressed
-				dr, err := cs.store.Diff("", layer.ID, &storage.DiffOptions{
-					Compression: &compression,
-				})
+			var diffOptions *storage.DiffOptions
+
+			getBlobReader := func() (io.ReadCloser, error) {
+				dr, err := cs.store.Diff("", layer.ID, diffOptions)
 				if err != nil {
 					return nil, fmt.Errorf("could not get diff for blob %s (layer %s): %w", sha, layer.ID, err)
 				}
-				r, w := io.Pipe()
-				// containers/storage uses a custom gzip library. We want to
-				// use the stdlib one to make it more likely to match the
-				// original blob (though it doesn't seem to help).
-				zw, err := gzip.NewWriterLevel(w, gzip.DefaultCompression)
-				if err != nil {
-					return nil, err
-				}
-				go func() {
-					defer w.Close()
-					io.Copy(zw, dr)
-					zw.Close()
-				}()
-				return r, nil
-			}
-			// This isn't particularly efficient, but the actual compressed
-			// image has a different size from layer.CompressedSize, presumably
-			// because the compression algorithm applied by containers/image is
-			// different to the one that originally created the blob.
-			// Calculating the size directly allows us to avoid HTTP
-			// "unexpected EOF" errors and prove that the SHA is also different,
-			// which is the bigger problem.
-			r, err := getDiff()
-			if err != nil {
-				return nil, 0, err
-			}
-			size, err := io.Copy(io.Discard, r)
-			if err != nil {
-				return nil, 0, err
+				return dr, nil
 			}
 
-			return getDiff, size, nil
+			hash := sha256.New()
+			r, err := getBlobReader()
+			if err != nil {
+				return nil, 0, err
+			}
+			if _, err := io.Copy(hash, r); err != nil {
+				return nil, 0, err
+			}
+			if digest.NewDigest(digest.Canonical, hash) == shaDigest {
+				// Layer was created with the same compression library as used
+				// by containers/storage (e.g. by buildah), so we can just
+				// return it.
+				return getBlobReader, layer.CompressedSize, nil
+			}
+
+			// Digest doesn't match with default compression, so try compressing
+			// the blob using the stdlib gzip (as used by e.g. moby/moby).
+			compression := archive.Uncompressed
+			diffOptions = &storage.DiffOptions{
+				Compression: &compression,
+			}
+			return compressBlob(getBlobReader)
 		}
 	} else {
 		errs = append(errs, err)
