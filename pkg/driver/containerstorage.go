@@ -230,13 +230,24 @@ func (cs *containerStorage) getBlob(sha string) (blobFunc, int64, error) {
 	if images, err := cs.store.ImagesByDigest(shaDigest); err == nil {
 		for _, image := range images {
 			b, err := cs.store.ImageBigData(image.ID, storage.ImageDigestBigDataKey)
-			if err != nil {
-				return nil, 0, fmt.Errorf("could not get manifest data for blob %s: %w", sha, err)
+			if err == nil {
+				return func() (io.ReadCloser, error) {
+					return io.NopCloser(bytes.NewReader(b)), nil
+				}, int64(len(b)), nil
 			}
+			errs = append(errs, fmt.Errorf("could not get manifest data for blob %s: %w", sha, err))
+		}
+	} else {
+		errs = append(errs, err)
+	}
+	if image, err := cs.store.Image(shaDigest.Encoded()); err == nil {
+		b, err := cs.store.ImageBigData(image.ID, shaDigest.String())
+		if err == nil {
 			return func() (io.ReadCloser, error) {
 				return io.NopCloser(bytes.NewReader(b)), nil
 			}, int64(len(b)), nil
 		}
+		errs = append(errs, fmt.Errorf("could not get manifest data for blob %s: %w", sha, err))
 	} else {
 		errs = append(errs, err)
 	}
