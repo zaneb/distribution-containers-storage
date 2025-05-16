@@ -66,14 +66,16 @@ func (fs fakeStore) listBlobs() ([]string, error) {
 	return append(revs, layers...), nil
 }
 
-func (fs fakeStore) getBlob(sha string) (io.ReadCloser, int64, error) {
+func (fs fakeStore) getBlob(sha string) (blobFunc, int64, error) {
 	blobs, err := fs.listBlobs()
 	if err != nil {
 		return nil, 0, err
 	}
 	for _, b := range blobs {
 		if sha == b {
-			return io.NopCloser(bytes.NewReader([]byte("Hello, World!"))), 13, nil
+			return func() (io.ReadCloser, error) {
+				return io.NopCloser(bytes.NewReader([]byte("Hello, World!"))), nil
+			}, 13, nil
 		}
 	}
 	return nil, 0, fmt.Errorf("non-existent blob %v", sha)
