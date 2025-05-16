@@ -7,8 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
-	"strings"
 
 	"github.com/containers/storage"
 	"github.com/containers/storage/pkg/archive"
@@ -42,21 +40,6 @@ func newContainerStorage() (store, error) {
 	}, nil
 }
 
-func imageRepo(name string) (string, error) {
-	uri, err := url.Parse("docker://" + name)
-	if err != nil {
-		return name, err
-	}
-	if i := strings.LastIndex(uri.Path, ":"); i >= 0 {
-		uri.Path = uri.Path[:i]
-	}
-	if i := strings.LastIndex(uri.Path, "@"); i >= 0 {
-		uri.Path = uri.Path[:i]
-	}
-	uri.Path = uri.Path[0:1] + strings.ReplaceAll(uri.Path[1:], "/", "_")
-	return strings.TrimPrefix(uri.String(), "docker://"), nil
-}
-
 type containerStorage struct {
 	store storage.Store
 }
@@ -69,11 +52,7 @@ func (cs *containerStorage) listRepos() ([]string, error) {
 	names := map[string]struct{}{}
 	for _, i := range images {
 		for _, n := range i.Names {
-			repo, err := imageRepo(n)
-			if err != nil {
-				return nil, err
-			}
-			names[repo] = struct{}{}
+			names[n] = struct{}{}
 		}
 	}
 	repos := make([]string, 0, len(names))
@@ -91,7 +70,7 @@ func (cs *containerStorage) listRepoRevisions(repo string) ([]string, error) {
 	shas := []string{}
 	for _, i := range images {
 		for _, n := range i.Names {
-			if iRepo, err := imageRepo(n); err == nil && iRepo == repo {
+			if n == repo {
 				for _, d := range i.Digests {
 					shas = append(shas, d.Encoded())
 				}
