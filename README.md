@@ -62,4 +62,4 @@ Theoretically there could exist layers built by other tools where the
 compression is different, resulting in the blob having an sha256 sum that does
 not match its digest (and likely a different size as well, resulting in HTTP
 errors). The existing tools could also change their compression algorithms at
-some point in the future, as some of them have in the past.
+some point in the future, as some of them have in the past. In fact, many tools are in the process of switching to zstd:chunked compression by default.
